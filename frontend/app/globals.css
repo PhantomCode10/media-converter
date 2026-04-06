@@ -1,0 +1,101 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Base resets ──────────────────────────────────────────────────────────── */
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-surface-DEFAULT text-slate-200 antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-surface-border;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-500;
+  }
+}
+
+/* Light mode overrides */
+.light body {
+  @apply bg-slate-50 text-slate-900;
+}
+.light .bg-surface-DEFAULT {
+  @apply bg-white;
+}
+.light .bg-surface-card {
+  @apply bg-slate-100;
+}
+.light .bg-surface-hover {
+  @apply bg-slate-200;
+}
+.light .border-surface-border {
+  @apply border-slate-200;
+}
+
+/* ─── Utility classes ──────────────────────────────────────────────────────── */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Instagram gradient text */
+  .text-ig-gradient {
+    background: linear-gradient(135deg, #833ab4, #e1306c, #f77737);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* YouTube gradient text */
+  .text-yt-gradient {
+    background: linear-gradient(135deg, #ff0000, #ff6b6b);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Glassmorphism background */
+  .glass {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    @apply bg-surface-card/60;
+  }
+}
+
+/* ─── Select dropdown styling ─────────────────────────────────────────────── */
+select option {
+  background-color: #1a1a22;
+  color: white;
+}
+
+/* ─── Focus outline reset ──────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.3);
+  outline-offset: 2px;
+}
