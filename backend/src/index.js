@@ -28,7 +28,12 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (curl, Postman, same-origin)
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    if (!origin) return callback(null, true);
+    // Allow any Vercel deployment preview/production URL for this project
+    if (
+      allowedOrigins.includes(origin) ||
+      /^https:\/\/media-converter[\w-]*\.vercel\.app$/.test(origin)
+    ) return callback(null, true);
     callback(new Error('Not allowed by CORS'));
   },
   methods: ['GET', 'POST'],
@@ -86,19 +91,30 @@ app.use((_req, res) => res.status(404).json({ error: 'Route not found' }));
 app.use(errorHandler);
 
 // ─── Startup ──────────────────────────────────────────────────────────────────
+// On Vercel (serverless) the IIFE still runs per cold start; initDownloadsDir
+// creates /tmp/downloads which IS writable. app.listen is a no-op on serverless
+// because @vercel/node intercepts requests directly via module.exports.
 (async () => {
-  await initDownloadsDir();
+  try {
+    await initDownloadsDir();
+  } catch (err) {
+    // Non-fatal on serverless if /tmp is not yet available at import time
+    logger.warn('initDownloadsDir warning: %s', err.message);
+  }
 
-  // Cleanup expired files every 10 minutes
+  // Cleanup expired files every 10 minutes (runs in long-lived processes only)
   cron.schedule('*/10 * * * *', () => {
     cleanupExpiredFiles().catch((err) =>
       logger.error('Cleanup cron error: %s', err.message)
     );
   });
 
-  app.listen(PORT, () => {
-    logger.info(`Server running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
-  });
+  // Only bind a port when running as a traditional Node.js server (not serverless)
+  if (!process.env.VERCEL) {
+    app.listen(PORT, () => {
+      logger.info(`Server running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
+    });
+  }
 })();
 
-module.exports = app; // export for testing
+module.exports = app; // export for @vercel/node and testing

@@ -18,7 +18,10 @@ const axios = require('axios');
 const { getDownloadsDir } = require('../utils/fileManager');
 const logger = require('../utils/logger');
 
-const YTDLP_BIN_DIR = path.resolve('./bin');
+// On Vercel/serverless, the project root is read-only; write binaries to /tmp
+const YTDLP_BIN_DIR =
+  process.env.YTDLP_BIN_DIR ||
+  (process.platform === 'win32' ? path.resolve('./bin') : '/tmp/bin');
 const YTDLP_BIN_PATH =
   process.env.YTDLP_BINARY_PATH ||
   path.join(YTDLP_BIN_DIR, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');

@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  output: 'standalone', // Required for Docker multi-stage build
+  // 'standalone' output is only for Docker; Vercel uses standard Next.js output
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'i.ytimg.com' },

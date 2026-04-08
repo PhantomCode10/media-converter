@@ -1,19 +1,19 @@
 /**
  * File Manager
  * Handles the downloads directory, file registration, lookup, and TTL-based cleanup.
- * Uses an in-memory registry (Map) keyed by UUID.  For multi-process deployments
- * replace the Map with a Redis store.
+ * Uses JSON sidecar files on disk for persistence across serverless invocations.
+ * This works on Vercel where /tmp is writable and containers may be reused.
  */
 const path = require('path');
 const fsp = require('fs').promises;
 const logger = require('./logger');
 
-const DOWNLOADS_DIR = path.resolve(process.env.DOWNLOADS_DIR || './downloads');
+// On Vercel/serverless the project root is read-only; fall back to /tmp
+const DEFAULT_DOWNLOADS_DIR =
+  process.platform === 'win32' ? './downloads' : '/tmp/downloads';
+const DOWNLOADS_DIR = path.resolve(process.env.DOWNLOADS_DIR || DEFAULT_DOWNLOADS_DIR);
 const FILE_TTL_MS =
   parseInt(process.env.FILE_TTL_MINUTES || '60', 10) * 60 * 1000;
-
-/** In-memory file registry: fileId → { filePath, filename, expiresAt } */
-const registry = new Map();
 
 /** Returns the resolved downloads directory path */
 function getDownloadsDir() {
@@ -27,55 +27,77 @@ async function initDownloadsDir() {
 }
 
 /**
- * Register a freshly created file for TTL tracking
- * @param {string} fileId - UUID
- * @param {string} filePath - Absolute path on disk
- * @param {string} filename - Human-friendly download name
+ * Register a freshly created file by writing a JSON sidecar.
+ * Persists across serverless container reuse via the /tmp filesystem.
  */
 async function registerFile(fileId, filePath, filename) {
   const expiresAt = Date.now() + FILE_TTL_MS;
-  registry.set(fileId, { filePath, filename, expiresAt });
+  const meta = { filePath, filename, expiresAt };
+  const metaPath = path.join(DOWNLOADS_DIR, `${fileId}.json`);
+  await fsp.writeFile(metaPath, JSON.stringify(meta), 'utf8');
 }
 
 /**
- * Look up a file by ID, returns null if not registered or expired
+ * Look up a file by ID via its JSON sidecar. Returns null if not found or expired.
  */
 async function getFilePath(fileId) {
-  const entry = registry.get(fileId);
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
-    // Expired — delete immediately
+  const metaPath = path.join(DOWNLOADS_DIR, `${fileId}.json`);
+  let meta;
+  try {
+    const raw = await fsp.readFile(metaPath, 'utf8');
+    meta = JSON.parse(raw);
+  } catch {
+    return null; // sidecar missing — file not registered or already deleted
+  }
+  if (Date.now() > meta.expiresAt) {
     await deleteFile(fileId);
     return null;
   }
-  return entry;
+  return meta;
 }
 
 /**
- * Delete a single file and remove from registry
+ * Delete a single file and its JSON sidecar
  */
 async function deleteFile(fileId) {
-  const entry = registry.get(fileId);
-  if (!entry) return;
-  registry.delete(fileId);
+  const metaPath = path.join(DOWNLOADS_DIR, `${fileId}.json`);
+  let filePath;
   try {
-    await fsp.unlink(entry.filePath);
-    logger.debug('Deleted expired file: %s', entry.filePath);
-  } catch (err) {
-    if (err.code !== 'ENOENT') {
-      logger.warn('Failed to delete %s: %s', entry.filePath, err.message);
-    }
+    const raw = await fsp.readFile(metaPath, 'utf8');
+    filePath = JSON.parse(raw).filePath;
+  } catch {
+    return; // nothing to delete
   }
+  await Promise.all([
+    fsp.unlink(metaPath).catch(() => {}),
+    filePath ? fsp.unlink(filePath).catch((err) => {
+      if (err.code !== 'ENOENT') logger.warn('Failed to delete %s: %s', filePath, err.message);
+    }) : Promise.resolve(),
+  ]);
+  logger.debug('Deleted file and sidecar for: %s', fileId);
 }
 
 /**
- * Called by the cron job — removes all expired entries
+ * Called by the cron job — removes all expired sidecar entries
  */
 async function cleanupExpiredFiles() {
+  let entries;
+  try {
+    entries = await fsp.readdir(DOWNLOADS_DIR);
+  } catch {
+    return; // directory may not exist yet
+  }
   const now = Date.now();
   const expired = [];
-  for (const [id, entry] of registry.entries()) {
-    if (now > entry.expiresAt) expired.push(id);
+  for (const name of entries) {
+    if (!name.endsWith('.json')) continue;
+    try {
+      const raw = await fsp.readFile(path.join(DOWNLOADS_DIR, name), 'utf8');
+      const meta = JSON.parse(raw);
+      if (now > meta.expiresAt) expired.push(name.replace('.json', ''));
+    } catch {
+      // corrupt sidecar — skip
+    }
   }
   if (expired.length) logger.info('Cleaning up %d expired file(s)', expired.length);
   await Promise.all(expired.map(deleteFile));
@@ -89,3 +111,4 @@ module.exports = {
   cleanupExpiredFiles,
   DOWNLOADS_DIR, // exported for static-serve config in index.js
 };
+
