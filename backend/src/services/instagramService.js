@@ -15,8 +15,15 @@ const sanitize = require('sanitize-filename');
 const YTDlpWrap = require('yt-dlp-wrap').default;
 const axios = require('axios');
 
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+
 const { getDownloadsDir } = require('../utils/fileManager');
 const logger = require('../utils/logger');
+
+/** Returns the ffmpeg binary path — bundled via @ffmpeg-installer/ffmpeg */
+function getFFmpegPath() {
+  return process.env.FFMPEG_PATH || ffmpegInstaller.path;
+}
 
 // On Vercel/serverless, the project root is read-only; write binaries to /tmp
 const YTDLP_BIN_DIR =
@@ -76,7 +83,7 @@ async function downloadInstagram({ url, format, quality }) {
   let thumbnail = null;
   try {
     const raw = await dlp.execPromise([
-      url, '--dump-json', '--no-playlist', '--no-warnings',
+      url, '--dump-json', '--no-playlist', '--no-warnings', '--ffmpeg-location', getFFmpegPath(),
     ]);
     const info = JSON.parse(raw);
     title = info.title || info.description?.substring(0, 50) || 'instagram_post';
@@ -96,6 +103,7 @@ async function downloadInstagram({ url, format, quality }) {
       url,
       '--no-playlist',
       '--no-warnings',
+      '--ffmpeg-location', getFFmpegPath(),
       '-x',
       '--audio-format', 'mp3',
       '--audio-quality', audioQuality,
@@ -128,6 +136,7 @@ async function downloadInstagram({ url, format, quality }) {
     url,
     '--no-playlist',
     '--no-warnings',
+    '--ffmpeg-location', getFFmpegPath(),
     '-f', formatSelector,
     '--merge-output-format', 'mp4',
     '-o', outputFile,
